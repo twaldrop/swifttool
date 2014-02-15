@@ -103,7 +103,7 @@ class SwiftRingsDefinition(object):
                 ret.update(nodes.keys())
         return ret
 
-    def generate_commands(self, outdir, rebalance=True):
+    def generate_commands(self, outdir, rebalance=True, meta=None):
         commands = []
 
         for ringtype in RING_TYPES:
@@ -113,21 +113,27 @@ class SwiftRingsDefinition(object):
                     for disk in disks['disks']:
                         match = re.match('(.*)\d+$', disk)
                         blockdev = '/dev/%s' % match.group(1)
-                        wwn = get_disk_wwn(node, blockdev)
+
+                        metadata = meta
+                        if not meta:
+                            metadata = get_disk_wwn(node, blockdev)
+
                         weight = get_disk_size(node, blockdev)
                         cmd = self._ring_add_command(ringtype, outdir, zone,
                                                      node,
                                                      self.ports[ringtype],
-                                                     disk, wwn, weight)
+                                                     disk, metadata, weight)
                         commands.append(cmd)
             if rebalance:
                 commands.append(self._ring_rebalance_command(ringtype, outdir))
 
         return commands
 
-    def generate_script(self, outdir, name='ring_builder.sh', rebalance=True):
+    def generate_script(self, outdir, name='ring_builder.sh', rebalance=True,
+                        meta=None):
         commands = ["#!/bin/bash\n"]
-        commands = commands + self.generate_commands(outdir)
+        commands = commands + self.generate_commands(outdir, rebalance,
+                                                     meta)
 
         outfile = os.path.join(outdir, name)
         f = open(outfile, 'w')
@@ -161,7 +167,8 @@ def bootstrap(args):
         if not os.path.exists(args.outdir):
             os.makedirs(args.outdir)
 
-        build_script = ringsdef.generate_script(args.outdir)
+        build_script = ringsdef.generate_script(args.outdir, meta=args.meta)
+        sys.exit(-1)
         subprocess.call(build_script)
 
         myips = ip4_addresses()
@@ -185,6 +192,7 @@ def main():
     parser_genconfig = subparsers.add_parser('bootstrap')
     parser_genconfig.add_argument('--config', required=True)
     parser_genconfig.add_argument('--outdir', required=True)
+    parser_genconfig.add_argument('--meta', default=None)
     parser_genconfig.set_defaults(func=bootstrap)
 
     args = parser.parse_args()
