@@ -19,6 +19,7 @@
 #
 
 import argparse
+import json
 import netifaces
 import os
 import subprocess
@@ -33,15 +34,19 @@ from netifaces import interfaces, ifaddresses, AF_INET
 RING_TYPES = ['account', 'container', 'object']
 
 
-def _fab_get_disk_wwn(disk):
+def _fab_get_disk_serial(disk):
     with hide('running', 'stdout', 'stderr'):
-        output = sudo('/usr/local/bin/raidtool wwn %s' % (disk), shell=False)
-        return output
+        output = sudo('lshw -C disk -json', pty=False, shell=False)
+        output = '[%s]' % output
+        for di in json.loads(output):
+            if di['logicalname'] == disk:
+                return di['serial']
+        return None
 
 
-def get_disk_wwn(ip, disk):
+def get_disk_serial(ip, disk):
     with hide('running', 'stdout', 'stderr'):
-        out = execute(_fab_get_disk_wwn, disk, hosts=[ip])
+        out = execute(_fab_get_disk_serial, disk, hosts=[ip])
         return out[ip]
 
 
@@ -116,7 +121,7 @@ class SwiftRingsDefinition(object):
 
                         metadata = meta
                         if not meta:
-                            metadata = get_disk_wwn(node, blockdev)
+                            metadata = get_disk_serial(node, blockdev)
 
                         weight = get_disk_size(node, blockdev)
                         cmd = self._ring_add_command(ringtype, outdir, zone,
@@ -168,13 +173,11 @@ def bootstrap(args):
             os.makedirs(args.outdir)
 
         build_script = ringsdef.generate_script(args.outdir, meta=args.meta)
-        sys.exit(-1)
         subprocess.call(build_script)
 
         myips = ip4_addresses()
         for node in ringsdef.nodes:
             if node not in myips:
-                print "call rsync %s" % node
                 dirname = os.path.dirname(args.outdir)
                 subprocess.call('rsync -az %s %s:%s' % (args.outdir, node,
                                                         dirname), shell=True)
