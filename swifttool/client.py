@@ -33,37 +33,43 @@ from netifaces import interfaces, ifaddresses, AF_INET
 
 RING_TYPES = ['account', 'container', 'object']
 
+def _parse_lshw_output(output, blockdev):
+    disks = re.split('\s*\*', output.strip())
+    alldisks = []
+    for disk in disks:
+        d = {}
+        for line in disk.split('\n'):
+            match = re.match('^-(\w+)', line)
+            if match:
+                d['class'] = match.group(1)
+            else:
+                match = re.match('^\s+([\w\s]+):\s+(.*)$', line)
+                if match:
+                    key = re.sub('\s', '_', match.group(1))
+                    val = match.group(2)
+                    d[key] = val
+        if 'class' in d:
+            alldisks.append(d)
 
-def _fab_get_disk_serial(disk):
+    for d in alldisks:
+        if d['logical_name'] == blockdev:
+            serial = d['serial']
+	    match = re.match('\s*(\d+)[MG]iB.*', d['size'])
+            if not match:
+                raise Exception("Could not find size of disk %s" % disk)
+            size = int(match.group(1))
+	    return size, serial
+
+
+def _fab_get_disk_size_serial(blockdev):
     with hide('running', 'stdout', 'stderr'):
-        output = sudo('lshw -C disk -json', pty=False, shell=False)
-        output = '[%s]' % output
-        for di in json.loads(output):
-            if di['logicalname'] == disk:
-                return di['serial']
-        return None
+        output = sudo('lshw -C disk', pty=False, shell=False)
+        return _parse_lshw_output(output, blockdev)
 
 
-def get_disk_serial(ip, disk):
+def get_disk_size_serial(ip, blockdev):
     with hide('running', 'stdout', 'stderr'):
-        out = execute(_fab_get_disk_serial, disk, hosts=[ip])
-        return out[ip]
-
-
-def _fab_get_disk_size(disk):
-    with settings(warn_only=True):
-        with hide('running', 'stdout', 'stderr'):
-            output = sudo('/sbin/fdisk -l %s' % (disk), pty=False,
-                          combine_stderr=False, shell=False)
-            match = re.match(r'^Disk.*: ([\d\.]+) GB.*bytes', output)
-            size = match.group(1)
-            size = int(float(size))
-            return size
-
-
-def get_disk_size(ip, disk):
-    with hide('running', 'stdout', 'stderr'):
-        out = execute(_fab_get_disk_size, disk, hosts=[ip])
+        out = execute(_fab_get_disk_size_serial, blockdev, hosts=[ip])
         return out[ip]
 
 
@@ -119,11 +125,12 @@ class SwiftRingsDefinition(object):
                         match = re.match('(.*)\d+$', disk)
                         blockdev = '/dev/%s' % match.group(1)
 
+                        # treat size as weight and serial as metadata
+                        weight, serial = get_disk_size_serial(node, blockdev)
+
                         metadata = meta
                         if not meta:
-                            metadata = get_disk_serial(node, blockdev)
-
-                        weight = get_disk_size(node, blockdev)
+                            metadata = serial
                         cmd = self._ring_add_command(ringtype, outdir, zone,
                                                      node,
                                                      self.ports[ringtype],
