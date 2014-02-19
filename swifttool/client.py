@@ -24,8 +24,10 @@ import netifaces
 import os
 import subprocess
 import re
+import shutil
 import stat
 import sys
+import tempfile
 import yaml
 
 from fabric.api import env, execute, hide, parallel, put, run, settings, sudo
@@ -54,11 +56,11 @@ def _parse_lshw_output(output, blockdev):
     for d in alldisks:
         if d['logical_name'] == blockdev:
             serial = d['serial']
-	    match = re.match('\s*(\d+)[MG]iB.*', d['size'])
+            match = re.match('\s*(\d+)[MG]iB.*', d['size'])
             if not match:
                 raise Exception("Could not find size of disk %s" % disk)
             size = int(match.group(1))
-	    return size, serial
+            return size, serial
 
 
 def _fab_get_disk_size_serial(blockdev):
@@ -167,8 +169,12 @@ def ip4_addresses():
                 ips.append(link['addr'])
     return ips
 
+@parallel
+def _fab_copy_swift_directory(local_files, remote_dir):
+    put(local_files, remote_dir, mirror_local_mode=True)
 
 def bootstrap(args):
+    rc = 0
     if not os.path.exists(args.config):
         raise Exception("Could not find confguration file '%s'" % args.config)
 
@@ -176,21 +182,19 @@ def bootstrap(args):
         config = yaml.load(open(args.config, 'r'))
         ringsdef = SwiftRingsDefinition(config)
 
-        if not os.path.exists(args.outdir):
-            os.makedirs(args.outdir)
-
-        build_script = ringsdef.generate_script(args.outdir, meta=args.meta)
+        tempdir = tempfile.mkdtemp()
+        build_script = ringsdef.generate_script(tempdir, meta=args.meta)
         subprocess.call(build_script)
 
-        myips = ip4_addresses()
-        for node in ringsdef.nodes:
-            if node not in myips:
-                dirname = os.path.dirname(args.outdir)
-                subprocess.call('rsync -az %s %s:%s' % (args.outdir, node,
-                                                        dirname), shell=True)
+        tempfiles = os.path.join(tempdir, "*")        
+        execute(_fab_copy_swift_directory, tempfiles, args.outdir, 
+        hosts=ringsdef.nodes)
     except Exception as e:
         print >> sys.stderr, "There was an error bootrapping: '%s'" % e
+        rc = -1
 
+    shutil.rmtree(tempdir)
+    sys.exit(rc)
 
 def main():
     parser = argparse.ArgumentParser(description='Tool to modify swift config')
