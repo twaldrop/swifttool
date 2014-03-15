@@ -35,6 +35,8 @@ from netifaces import interfaces, ifaddresses, AF_INET
 
 RING_TYPES = ['account', 'container', 'object']
 
+_host_lshw_output = {}
+
 def _parse_lshw_output(output, blockdev):
     disks = re.split('\s*\*', output.strip())
     alldisks = []
@@ -63,15 +65,21 @@ def _parse_lshw_output(output, blockdev):
             return size, serial
 
 
-def _fab_get_disk_size_serial(blockdev):
+def _fab_get_disk_size_serial(ip, blockdev):
     with hide('running', 'stdout', 'stderr'):
-        output = sudo('lshw -C disk', pty=False, shell=False)
+        global _host_lshw_output
+        output = None
+        if ip in _host_lshw_output:
+            output = _host_lshw_output[ip]
+        else: 
+            output = sudo('lshw -C disk', pty=False, shell=False)
+            _host_lshw_output[ip] = output
         return _parse_lshw_output(output, blockdev)
 
 
 def get_disk_size_serial(ip, blockdev):
     with hide('running', 'stdout', 'stderr'):
-        out = execute(_fab_get_disk_size_serial, blockdev, hosts=[ip])
+        out = execute(_fab_get_disk_size_serial, ip, blockdev, hosts=[ip])
         return out[ip]
 
 
