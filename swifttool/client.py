@@ -133,6 +133,22 @@ class SwiftRingsDefinition(object):
             for zone, nodes in self.zones.iteritems():
                 for node, disks in nodes.iteritems():
                     for disk in disks['disks']:
+
+                        weight = None
+                        serial = None
+                        parts = disk.split(',')
+                        if len(parts) == 1:
+                            # treat size as weight and serial as metadata
+                            weight, serial = get_disk_size_serial(node,
+                                                                  blockdev)
+                        elif len(parts) == 3:
+                            weight = parts[1].strip()
+                            serial = parts[2].strip()
+                        else:
+                            raise Exception("Disk format must be either"
+                                            " '<disk>' or '<disk>,<size>,"
+                                            "'<serial>'")
+
                         match = re.match('(.*)\d+$', disk)
                         blockdev = '/dev/%s' % match.group(1)
 
