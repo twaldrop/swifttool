@@ -37,6 +37,7 @@ RING_TYPES = ['account', 'container', 'object']
 
 _host_lshw_output = {}
 
+
 def _parse_lshw_output(output, blockdev):
     disks = re.split('\s*\*', output.strip())
     alldisks = []
@@ -71,7 +72,7 @@ def _fab_get_disk_size_serial(ip, blockdev):
         output = None
         if ip in _host_lshw_output:
             output = _host_lshw_output[ip]
-        else: 
+        else:
             output = sudo('lshw -C disk', pty=False, shell=False)
             _host_lshw_output[ip] = output
         return _parse_lshw_output(output, blockdev)
@@ -177,9 +178,11 @@ def ip4_addresses():
                 ips.append(link['addr'])
     return ips
 
+
 @parallel
 def _fab_copy_swift_directory(local_files, remote_dir):
     put(local_files, remote_dir, mirror_local_mode=True)
+
 
 def bootstrap(args):
     rc = 0
@@ -194,15 +197,16 @@ def bootstrap(args):
         build_script = ringsdef.generate_script(tempdir, meta=args.meta)
         subprocess.call(build_script)
 
-        tempfiles = os.path.join(tempdir, "*")        
-        execute(_fab_copy_swift_directory, tempfiles, args.outdir, 
-        hosts=ringsdef.nodes)
+        tempfiles = os.path.join(tempdir, "*")
+        execute(_fab_copy_swift_directory, tempfiles, args.outdir,
+                hosts=ringsdef.nodes)
     except Exception as e:
         print >> sys.stderr, "There was an error bootrapping: '%s'" % e
         rc = -1
 
     shutil.rmtree(tempdir)
     sys.exit(rc)
+
 
 def main():
     parser = argparse.ArgumentParser(description='Tool to modify swift config')
