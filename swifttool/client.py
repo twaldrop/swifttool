@@ -204,7 +204,7 @@ def bootstrap(args):
         print >> sys.stderr, "There was an error bootrapping: '%s'" % e
         rc = -1
 
-    shutil.rmtree(tempdir)
+#    shutil.rmtree(tempdir)
     sys.exit(rc)
 
 
